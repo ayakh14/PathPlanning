@@ -13,15 +13,22 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
 
 from Search_2D import plotting
 from Search_2D import env
+from random_env import RandomEnv, CustomEnv
+
 
 
 class ADStar:
-    def __init__(self, s_start, s_goal, eps, heuristic_type):
+    def __init__(self, s_start, s_goal, eps, heuristic_type, env_instance=None):
         self.s_start, self.s_goal = s_start, s_goal
         self.heuristic_type = heuristic_type
+       
+        if env_instance is None:
+            self.Env = env.Env()
+        else:
+            self.Env = env_instance
+        self.Plot = plotting.Plotting(s_start, s_goal, self.Env)
 
-        self.Env = env.Env()  # class Env
-        self.Plot = plotting.Plotting(s_start, s_goal)
+        # self.Plot = plotting.Plotting(s_start, s_goal)
 
         self.u_set = self.Env.motions  # feasible input set
         self.obs = self.Env.obs  # position of obstacles
@@ -306,10 +313,15 @@ class ADStar:
 
 
 def main():
-    s_start = (5, 5)
-    s_goal = (45, 25)
+    x_range = 51
+    y_range = 51
+    obs_density = 0.2  # 20% of the cells will have obstacles
 
-    dstar = ADStar(s_start, s_goal, 2.5, "euclidean")
+    random_env = RandomEnv(x_range, y_range, obs_density)
+    s_start = random_env.start
+    s_goal = random_env.goal
+
+    dstar = ADStar(s_start, s_goal, 2.5, "euclidean", random_env)
     dstar.run()
 
 

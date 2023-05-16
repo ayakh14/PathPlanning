@@ -7,19 +7,30 @@ import os
 import sys
 import math
 import matplotlib.pyplot as plt
+import time
+import psutil
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import plotting, env
-
+from random_env import RandomEnv
+# Starting measuring time
+start_time = None
+# End measuring time
+end_time = None
+process = psutil.Process()
 
 class DStar:
-    def __init__(self, s_start, s_goal):
+    def __init__(self, s_start, s_goal, env_instance=None):
         self.s_start, self.s_goal = s_start, s_goal
 
-        self.Env = env.Env()
-        self.Plot = plotting.Plotting(self.s_start, self.s_goal)
+        if env_instance is None:
+            self.Env = env.Env()
+        else:
+            self.Env = env_instance
+
+        self.Plot = plotting.Plotting(self.s_start, self.s_goal, self.Env)
 
         self.u_set = self.Env.motions
         self.obs = self.Env.obs
@@ -37,6 +48,10 @@ class DStar:
         self.visited = set()
         self.count = 0
 
+
+        self.total_path_cost = 0.0
+        self.total_expanded_nodes = 0
+        self.total_searches = 0
     def init(self):
         for i in range(self.Env.x_range):
             for j in range(self.Env.y_range):
@@ -48,6 +63,13 @@ class DStar:
         self.h[self.s_goal] = 0.0
 
     def run(self, s_start, s_end):
+
+        global process, start_time, end_time
+        # measuring time at the start
+        start_time = time.time()
+        # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
+        m1 = process.memory_info().rss
+
         self.init()
         self.insert(s_end, 0)
 
@@ -59,9 +81,21 @@ class DStar:
         self.path = self.extract_path(s_start, s_end)
         self.Plot.plot_grid("Dynamic A* (D*)")
         self.plot_path(self.path)
+
+        m2 = process.memory_info().rss
+        # End measuring time
+        end_time = time.time()
+
         self.fig.canvas.mpl_connect('button_press_event', self.on_press)
         plt.show()
 
+
+        print(f"Total path cost: {self.total_path_cost}")
+        print(f"Total number of expanded nodes: {self.total_expanded_nodes}")
+        print(f"Number of searches made to find a solution: {self.total_searches}")
+        print(f"Number of expanded nodes per lookahead (iteration): {self.total_expanded_nodes / self.total_searches}")
+        print(f"Total memory consumption {(m2 - m1)/1024/1024} MB")
+        print(f"Execution time: {end_time - start_time} seconds")
     def on_press(self, event):
         x, y = event.xdata, event.ydata
         if x < 0 or x > self.x - 1 or y < 0 or y > self.y - 1:
@@ -96,12 +130,15 @@ class DStar:
         path = [s_start]
         s = s_start
         while True:
-            s = self.PARENT[s]
-            path.append(s)
+            s_next = self.PARENT[s]
+            self.total_path_cost += self.cost(s, s_next)
+            path.append(s_next)
+            s = s_next
             if s == s_end:
                 return path
 
     def process_state(self):
+        self.total_searches += 1
         s = self.min_state()  # get node in OPEN set with min k value
         self.visited.add(s)
 
@@ -114,6 +151,8 @@ class DStar:
         # k_min < h[s] --> s: RAISE state (increased cost)
         if k_old < self.h[s]:
             for s_n in self.get_neighbor(s):
+                self.total_expanded_nodes += 1  # count the expanded node here
+
                 if self.h[s_n] <= k_old and \
                         self.h[s] > self.h[s_n] + self.cost(s_n, s):
 
@@ -124,6 +163,8 @@ class DStar:
         # s: k_min >= h[s] -- > s: LOWER state (cost reductions)
         if k_old == self.h[s]:
             for s_n in self.get_neighbor(s):
+                self.total_expanded_nodes += 1  # count the expanded node here
+
                 if self.t[s_n] == 'NEW' or \
                         (self.PARENT[s_n] == s and self.h[s_n] != self.h[s] + self.cost(s, s_n)) or \
                         (self.PARENT[s_n] != s and self.h[s_n] > self.h[s] + self.cost(s, s_n)):
@@ -136,6 +177,8 @@ class DStar:
                     self.insert(s_n, self.h[s] + self.cost(s, s_n))
         else:
             for s_n in self.get_neighbor(s):
+                self.total_expanded_nodes += 1  # count the expanded node here
+
                 if self.t[s_n] == 'NEW' or \
                         (self.PARENT[s_n] == s and self.h[s_n] != self.h[s] + self.cost(s, s_n)):
 
@@ -294,10 +337,22 @@ class DStar:
 
 
 def main():
-    s_start = (5, 5)
-    s_goal = (45, 25)
-    dstar = DStar(s_start, s_goal)
+    x_range = 51
+    y_range = 51
+    obs_density = 0.2  # 20% of the cells will have obstacles
+
+    random_env = RandomEnv(x_range, y_range, obs_density)
+    s_start = random_env.start
+    s_goal = random_env.goal
+
+    dstar = DStar(s_start, s_goal, random_env)
     dstar.run(s_start, s_goal)
+
+# def main():
+#     s_start = (5, 5)
+#     s_goal = (45, 25)
+#     dstar = DStar(s_start, s_goal)
+#     dstar.run(s_start, s_goal)
 
 
 if __name__ == '__main__':

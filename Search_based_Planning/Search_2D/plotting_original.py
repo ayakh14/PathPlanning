@@ -14,10 +14,10 @@ from Search_2D import env
 
 
 class Plotting:
-    def __init__(self, xI, xG, environment=None):
+    def __init__(self, xI, xG):
         self.xI, self.xG = xI, xG
-        self.env = environment if environment else env.Env()
-        self.obs = self.env.obs
+        self.env = env.Env()
+        self.obs = self.env.obs_map()
 
     def update_obs(self, obs):
         self.obs = obs
@@ -30,7 +30,7 @@ class Plotting:
 
     def animation_lrta(self, path, visited, name):
         self.plot_grid(name)
-        cl = self.color_list_2() * 100
+        cl = self.color_list_2()
         path_combine = []
 
         for k in range(len(path)):
@@ -163,8 +163,3 @@ class Plotting:
               'blueviolet',
               ]
         return cl
-
-    
-
-
-

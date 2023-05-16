@@ -10,19 +10,29 @@ g(s) decreased introduces a local inconsistency between s and its successors.
 import os
 import sys
 import math
+import time
+import psutil
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import plotting, env
+from random_env import RandomEnv
 
+# Starting measuring time
+start_time = None
+# End measuring time
+end_time = None
+process = psutil.Process()
+m2 = None
+m1 = None
 
 class AraStar:
-    def __init__(self, s_start, s_goal, e, heuristic_type):
+    def __init__(self, s_start, s_goal, e, heuristic_type, environment):
         self.s_start, self.s_goal = s_start, s_goal
         self.heuristic_type = heuristic_type
 
-        self.Env = env.Env()                                                # class Env
+        self.Env = environment                                                # class Env
 
         self.u_set = self.Env.motions                                       # feasible input set
         self.obs = self.Env.obs                                             # position of obstacles
@@ -34,7 +44,10 @@ class AraStar:
         self.INCONS = {}                                                    # INCONSISTENT set
         self.PARENT = dict()                                                # relations
         self.path = []                                                      # planning path
-        self.visited = []                                                   # order of visited nodes
+        self.visited = [] 
+        
+        self.searches = 0   #added
+                                                          # order of visited nodes
 
     def init(self):
         """
@@ -47,9 +60,18 @@ class AraStar:
         self.PARENT[self.s_start] = self.s_start
 
     def searching(self):
+
+        global process, start_time, end_time, m1, m2
+        # measuring time at the start
+        start_time = time.time()
+        # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
+        m1 = process.memory_info().rss
+
+
         self.init()
         self.ImprovePath()
         self.path.append(self.extract_path())
+        self.searches += 1  #added                                               # Increment count of searches made
 
         while self.update_e() > 1:                                          # continue condition
             self.e -= 0.4                                                   # increase weight
@@ -61,6 +83,11 @@ class AraStar:
             self.ImprovePath()                                              # improve path
             self.path.append(self.extract_path())
 
+            self.searches += 1    # Added line - Increment the counter after each ImprovePath call
+
+        m2 = process.memory_info().rss
+        # End measuring time
+        end_time = time.time()
         return self.path, self.visited
 
     def ImprovePath(self):
@@ -189,7 +216,8 @@ class AraStar:
         :param s_end: end node
         :return: True: is collision / False: not collision
         """
-
+        s_start = tuple(s_start)
+        s_end = tuple(s_end)
         if s_start in self.obs or s_end in self.obs:
             return True
 
@@ -206,16 +234,73 @@ class AraStar:
 
         return False
 
+    def calculate_path_cost(self):
+            """
+            Calculating the total cost of the final path.
+            :return: Total path cost
+            """
+
+            total_cost = 0.0
+
+            if self.path:
+                final_path = self.path[-1]  # Final path is the last element
+                for i in range(len(final_path) - 1):
+                    # print(f"s_start: {final_path[i]}, s_goal: {final_path[i + 1]}")  # Debug line
+                    total_cost += self.cost(final_path[i], final_path[i + 1])
+
+
+            return total_cost
 
 def main():
-    s_start = (5, 5)
-    s_goal = (45, 25)
+    x_range = 51
+    y_range = 51
+    obs_density = 0.2  # 20% of the cells will have obstacles
 
-    arastar = AraStar(s_start, s_goal, 2.5, "euclidean")
-    plot = plotting.Plotting(s_start, s_goal)
+    random_env = RandomEnv(x_range, y_range, obs_density)
+    s_start = random_env.start
+    s_goal = random_env.goal
+
+    arastar = AraStar(s_start, s_goal, 2.5, "euclidean", random_env)
+    plot = plotting.Plotting(s_start, s_goal, random_env)
 
     path, visited = arastar.searching()
+
+    total_expanded_nodes = sum(len(nodes) for nodes in visited)
+    nodes_per_search = [len(nodes) for nodes in visited]
+    total_path_cost = arastar.calculate_path_cost()    # Added line - Calculate total path cost
+
+    # Added lines - Print the gathered information
+    print(f"Total path cost: {total_path_cost}")
+    print(f"Total number of expanded nodes: {total_expanded_nodes}")
+    print(f"Number of searches made to find a solution: {arastar.searches}")
+    print(f"Number of expanded nodes per lookahead (iteration): {nodes_per_search}")
+    print(f"Total memory consumption {(m2 - m1)/1024/1024} MB")
+    print(f"Execution time: {end_time - start_time} seconds")
+
     plot.animation_ara_star(path, visited, "Anytime Repairing A* (ARA*)")
+
+# def main():
+#     s_start = (5, 5)
+#     s_goal = (45, 25)
+
+#     arastar = AraStar(s_start, s_goal, 2.5, "euclidean")
+#     plot = plotting.Plotting(s_start, s_goal)
+
+#     path, visited = arastar.searching()
+#     plot.animation_ara_star(path, visited, "Anytime Repairing A* (ARA*)")
+
+#     total_expanded_nodes = sum(len(nodes) for nodes in visited)
+#     nodes_per_search = [len(nodes) for nodes in visited]
+#     total_path_cost = arastar.calculate_path_cost()    # Added line - Calculate total path cost
+
+#     # Added lines - Print the gathered information
+#     print(f"Total path cost: {total_path_cost}")
+#     print(f"Total number of expanded nodes: {total_expanded_nodes}")
+#     print(f"Number of searches made to find a solution: {arastar.searches}")
+#     print(f"Number of expanded nodes per lookahead (iteration): {nodes_per_search}")
+#     print(f"Total memory consumption {(m2 - m1)/1024/1024} MB")
+#     print(f"Execution time: {end_time - start_time} seconds")
+
 
 
 if __name__ == '__main__':

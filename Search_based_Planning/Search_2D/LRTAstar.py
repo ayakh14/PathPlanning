@@ -7,19 +7,29 @@ import os
 import sys
 import copy
 import math
+import time
+import psutil
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import queue, plotting, env
+from random_env import RandomEnv
 
+# Starting measuring time
+start_time = None
+# End measuring time
+end_time = None
+process = psutil.Process()
+m2 = None
+m1 = None
 
 class LrtAStarN:
-    def __init__(self, s_start, s_goal, N, heuristic_type):
+    def __init__(self, s_start, s_goal, N, heuristic_type, environment):
         self.s_start, self.s_goal = s_start, s_goal
         self.heuristic_type = heuristic_type
 
-        self.Env = env.Env()
+        self.Env = environment
 
         self.u_set = self.Env.motions  # feasible input set
         self.obs = self.Env.obs  # position of obstacles
@@ -28,6 +38,14 @@ class LrtAStarN:
         self.visited = []  # order of visited nodes in planning
         self.path = []  # path of each iteration
         self.h_table = {}  # h_value table
+
+
+
+        self.total_path_cost = 0
+        self.total_expanded_nodes = 0
+        self.total_searches = 0
+        self.expanded_nodes_per_lookahead = []
+        
 
     def init(self):
         """
@@ -40,8 +58,18 @@ class LrtAStarN:
                 self.h_table[(i, j)] = self.h((i, j))
 
     def searching(self):
+
+        global process, start_time, end_time, m1, m2
+        # measuring time at the start
+        start_time = time.time()
+        # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
+        m1 = process.memory_info().rss
+
         self.init()
         s_start = self.s_start  # initialize start node
+
+        # Add the following lines at the beginning of the searching method in the LrtAStarN class
+        self.total_searches = 0
 
         while True:
             OPEN, CLOSED = self.AStar(s_start, self.N)  # OPEN, CLOSED sets in each iteration
@@ -57,7 +85,11 @@ class LrtAStarN:
 
             s_start, path_k = self.extract_path_in_CLOSE(s_start, h_value)  # x_init -> expected node in OPEN set
             self.path.append(path_k)
+            self.total_searches += 1
 
+        m2 = process.memory_info().rss
+        # End measuring time
+        end_time = time.time()
     def extract_path_in_CLOSE(self, s_start, h_value):
         path = [s_start]
         s = s_start
@@ -99,6 +131,8 @@ class LrtAStarN:
                 return h_value
 
     def AStar(self, x_start, N):
+        # Add the following lines at the beginning of the AStar method in the LrtAStarN class
+        expanded_nodes_count = 0
         OPEN = queue.QueuePrior()  # OPEN set
         OPEN.put(x_start, self.h(x_start))
         CLOSED = []  # CLOSED set
@@ -108,11 +142,18 @@ class LrtAStarN:
 
         while not OPEN.empty():
             count += 1
+            # Add the following line after the "count += 1" line in the AStar method in the LrtAStarN class
+            expanded_nodes_count += 1
+            # print(f"expanded_nodes_count",expanded_nodes_count)
             s = OPEN.get()
             CLOSED.append(s)
 
             if s == self.s_goal:  # reach the goal node
                 self.visited.append(CLOSED)
+                # print(f"expanded_nodes_count",expanded_nodes_count)
+                self.total_expanded_nodes += expanded_nodes_count
+                self.expanded_nodes_per_lookahead.append(expanded_nodes_count)
+                self.total_searches += 1  # increment search count when goal is found
                 return "FOUND", self.extract_path(x_start, PARENT)
 
             for s_n in self.get_neighbor(s):
@@ -129,8 +170,25 @@ class LrtAStarN:
                 break
 
         self.visited.append(CLOSED)  # visited nodes in each iteration
-
+       
+        # Add the following line before the "return OPEN, CLOSED" line in the AStar method in the LrtAStarN class
+        self.total_expanded_nodes += expanded_nodes_count
+        self.expanded_nodes_per_lookahead.append(expanded_nodes_count)
+        
         return OPEN, CLOSED
+    
+    # Add the following method to the LrtAStarN class
+    def calculate_total_path_cost(self):
+        total_cost = 0
+        for path_segment in self.path:
+            for i in range(len(path_segment) - 1):
+                segment_cost = self.cost(path_segment[i], path_segment[i + 1])
+                if segment_cost == float("inf"):
+                    self.total_path_cost = float("inf")
+                    return
+                total_cost += segment_cost
+        self.total_path_cost = total_cost
+
 
     def get_neighbor(self, s):
         """
@@ -201,30 +259,64 @@ class LrtAStarN:
             return True
 
         if s_start[0] != s_end[0] and s_start[1] != s_end[1]:
-            if s_end[0] - s_start[0] == s_start[1] - s_end[1]:
-                s1 = (min(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
-                s2 = (max(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
-            else:
-                s1 = (min(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
-                s2 = (max(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
+            s1 = (s_start[0], s_end[1])
+            s2 = (s_end[0], s_start[1])
 
-            if s1 in self.obs or s2 in self.obs:
+            if s1 in self.obs and s2 in self.obs:
                 return True
 
         return False
 
 
-def main():
-    s_start = (10, 5)
-    s_goal = (45, 25)
 
-    lrta = LrtAStarN(s_start, s_goal, 250, "euclidean")
-    plot = plotting.Plotting(s_start, s_goal)
+def main():
+    x_range = 50
+    y_range = 50
+    obs_density = 0.2  # 20% of the cells will have obstacles
+
+    random_env = RandomEnv(x_range, y_range, obs_density)
+    s_start = random_env.start
+    s_goal = random_env.goal
+
+    lrta = LrtAStarN(s_start, s_goal, 30, "euclidean", random_env)
+    plot = plotting.Plotting(s_start, s_goal, random_env)
 
     lrta.searching()
+    lrta.calculate_total_path_cost()
+
+
+    # Print the requested information
+
+    print(f"1. Total path cost: {lrta.total_path_cost}")
+    print(f"2. Total number of expanded nodes: {lrta.total_expanded_nodes}")
+    print(f"3. Number of searches made to find a solution: {lrta.total_searches}")
+    print(f"4. Number of expanded nodes per lookahead (iteration): {lrta.expanded_nodes_per_lookahead}")
+    print(f"5. Total memory consumption {(m2 - m1)/1024/1024} MB")
+    print(f"6. Execution time: {end_time - start_time} seconds") 
     plot.animation_lrta(lrta.path, lrta.visited,
                         "Learning Real-time A* (LRTA*)")
+    
+    # def main():
+    # s_start = (10, 5)
+    # s_goal = (45, 25)
+
+    # lrta = LrtAStarN(s_start, s_goal, 400, "euclidean")
+    # plot = plotting.Plotting(s_start, s_goal)
+
+    # lrta.searching()
+    # lrta.calculate_total_path_cost()
 
 
+    # # Print the requested information
+
+
+    # print(f"1. Total path cost: {lrta.total_path_cost}")
+    # print(f"2. Total number of expanded nodes: {lrta.total_expanded_nodes}")
+    # print(f"3. Number of searches made to find a solution: {lrta.total_searches}")
+    # print(f"4. Number of expanded nodes per lookahead (iteration): {lrta.expanded_nodes_per_lookahead}")
+    # print(f"5. Total memory consumption {(m2 - m1)/1024/1024} MB")
+    # print(f"6. Execution time: {end_time - start_time} seconds") 
+    # plot.animation_lrta(lrta.path, lrta.visited,
+    #                     "Learning Real-time A* (LRTA*)")
 if __name__ == '__main__':
     main()

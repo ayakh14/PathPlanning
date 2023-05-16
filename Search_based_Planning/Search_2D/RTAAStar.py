@@ -7,19 +7,29 @@ import os
 import sys
 import copy
 import math
+import time
+import psutil
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import queue, plotting, env
+from random_env import RandomEnv
 
+# Starting measuring time
+start_time = None
+# End measuring time
+end_time = None
+process = psutil.Process()
+m2 = None
+m1 = None
 
 class RTAAStar:
-    def __init__(self, s_start, s_goal, N, heuristic_type):
+    def __init__(self, s_start, s_goal, N, heuristic_type, environment):
         self.s_start, self.s_goal = s_start, s_goal
         self.heuristic_type = heuristic_type
 
-        self.Env = env.Env()
+        self.Env = environment
 
         self.u_set = self.Env.motions  # feasible input set
         self.obs = self.Env.obs  # position of obstacles
@@ -28,7 +38,9 @@ class RTAAStar:
         self.visited = []  # order of visited nodes in planning
         self.path = []  # path of each iteration
         self.h_table = {}  # h_value table
-
+        self.num_nodes_explored = 0  # initializing hte number of expanded nodes
+        self.total_searches = 0  # added
+        
     def init(self):
         """
         initialize the h_value of all nodes in the environment.
@@ -40,6 +52,13 @@ class RTAAStar:
                 self.h_table[(i, j)] = self.h((i, j))
 
     def searching(self):
+
+        global process, start_time, end_time, m1, m2
+        # measuring time at the start
+        start_time = time.time()
+        # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
+        m1 = process.memory_info().rss
+
         self.init()
         s_start = self.s_start  # initialize start node
 
@@ -49,6 +68,7 @@ class RTAAStar:
 
             if OPEN == "FOUND":  # reach the goal node
                 self.path.append(CLOSED)
+                self.total_searches += 1  # added
                 break
 
             s_next, h_value = self.cal_h_value(OPEN, CLOSED, g_table, PARENT)
@@ -58,6 +78,11 @@ class RTAAStar:
 
             s_start, path_k = self.extract_path_in_CLOSE(s_start, s_next, h_value)
             self.path.append(path_k)
+            self.total_searches += 1  # added
+        
+        m2 = process.memory_info().rss
+        # End measuring time
+        end_time = time.time()
 
     def cal_h_value(self, OPEN, CLOSED, g_table, PARENT):
         v_open = {}
@@ -103,7 +128,7 @@ class RTAAStar:
             count += 1
             s = OPEN.get()
             CLOSED.append(s)
-
+            self.num_nodes_explored += 1 #increament the number of expanded nodes when a node is added in CLOSED
             if s == self.s_goal:  # reach the goal node
                 self.visited.append(CLOSED)
                 return "FOUND", self.extract_path(x_start, PARENT), [], []
@@ -170,8 +195,7 @@ class RTAAStar:
             s = parent[s]
             path.append(s)
             if s == x_start:
-                break
-
+                break      
         return list(reversed(path))
 
     def h(self, s):
@@ -197,8 +221,8 @@ class RTAAStar:
         :return:  Cost for this motion
         :note: Cost function could be more complicate!
         """
-
-        if self.is_collision(s_start, s_goal):
+        path = [s_start, s_goal]
+        if self.path_collision(path):
             return float("inf")
 
         return math.hypot(s_goal[0] - s_start[0], s_goal[1] - s_start[1])
@@ -207,30 +231,89 @@ class RTAAStar:
         if s_start in self.obs or s_end in self.obs:
             return True
 
-        if s_start[0] != s_end[0] and s_start[1] != s_end[1]:
-            if s_end[0] - s_start[0] == s_start[1] - s_end[1]:
-                s1 = (min(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
-                s2 = (max(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
-            else:
-                s1 = (min(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
-                s2 = (max(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
+        x0, y0 = s_start
+        x1, y1 = s_end
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
 
-            if s1 in self.obs or s2 in self.obs:
+        while x0 != x1 or y0 != y1:
+            if (x0, y0) in self.obs:
                 return True
+            e2 = 2*err
+            if e2 > -dy:
+                err -= dy
+                x0 += sx
+            if e2 < dx:
+                err += dx
+                y0 += sy
 
         return False
+    
+    def path_collision(self, path):
+        for i in range(len(path) - 1):
+            if self.is_collision(path[i], path[i+1]):
+                print("Collision between", path[i], "and", path[i+1])
+                return True
+        return False
+    
+    def expanded_nodes_per_lookahead(self):  # added
+        return self.num_nodes_explored / self.total_searches
+    
+    def path_length(self, path):
+        cost = 0.0
+        for i in range(len(path) - 1):
+            cost += self.cost(path[i], path[i+1])
+        return cost
 
 
+
+
+# main for static env
 def main():
-    s_start = (10, 5)
-    s_goal = (45, 25)
+    x_range = 30
+    y_range = 30
+    obs_density = 0.2  # 20% of the cells will have obstacles
 
-    rtaa = RTAAStar(s_start, s_goal, 240, "euclidean")
-    plot = plotting.Plotting(s_start, s_goal)
+    random_env = RandomEnv(x_range, y_range, obs_density)
+    s_start = random_env.start
+    s_goal = random_env.goal
 
-    rtaa.searching()
+    rtaa = RTAAStar(s_start, s_goal, 100, "euclidean", random_env)
+    plot = plotting.Plotting(s_start, s_goal, random_env)
+
+    rtaa.searching() 
+    print(f"1. Total path cost: {rtaa.path_length([node for segment in rtaa.path for node in segment])}")  # added
+    print(f"2. Total number of expanded nodes: {rtaa.num_nodes_explored}")  # added
+    print(f"3. Number of searches made to find a solution: {rtaa.total_searches}")  # added
+    print(f"4. Number of expanded nodes per lookahead (iteration): {rtaa.expanded_nodes_per_lookahead()}")  # added
+    print(f"5. Total memory consumption {(m2 - m1)/1024/1024} MB")
+    print(f"6. Execution time: {end_time - start_time} seconds")   
+    
     plot.animation_lrta(rtaa.path, rtaa.visited,
                         "Real-time Adaptive A* (RTAA*)")
+
+# # main for static env
+# def main():
+#     s_start = (10, 5)
+#     s_goal = (45, 25)
+
+#     rtaa = RTAAStar(s_start, s_goal, 100, "euclidean")
+#     plot = plotting.Plotting(s_start, s_goal)
+
+#     rtaa.searching() 
+#     print(f"1. Total path cost: {rtaa.path_length([node for segment in rtaa.path for node in segment])}")  # added
+#     print(f"2. Total number of expanded nodes: {rtaa.num_nodes_explored}")  # added
+#     print(f"3. Number of searches made to find a solution: {rtaa.total_searches}")  # added
+#     print(f"4. Number of expanded nodes per lookahead (iteration): {rtaa.expanded_nodes_per_lookahead()}")  # added
+#     print(f"5. Total memory consumption {(m2 - m1)/1024/1024} MB")
+#     print(f"6. Execution time: {end_time - start_time} seconds")   
+    
+#     plot.animation_lrta(rtaa.path, rtaa.visited,
+#                         "Real-time Adaptive A* (RTAA*)")
+    
 
 
 if __name__ == '__main__':

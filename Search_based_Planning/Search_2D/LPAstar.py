@@ -7,20 +7,32 @@ import os
 import sys
 import math
 import matplotlib.pyplot as plt
+import time
+import psutil
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import plotting, env
+from random_env import RandomEnv
 
+# Starting measuring time
+start_time = None
+# End measuring time
+end_time = None
 
+process = psutil.Process()
 class LPAStar:
-    def __init__(self, s_start, s_goal, heuristic_type):
+
+    def __init__(self, s_start, s_goal, heuristic_type, env_instance=None):
         self.s_start, self.s_goal = s_start, s_goal
         self.heuristic_type = heuristic_type
 
-        self.Env = env.Env()
-        self.Plot = plotting.Plotting(self.s_start, self.s_goal)
+        if env_instance is None:
+            self.Env = env.Env()
+        else:
+            self.Env = env_instance
+        self.Plot = plotting.Plotting(self.s_start, self.s_goal, self.Env)
 
         self.u_set = self.Env.motions
         self.obs = self.Env.obs
@@ -40,15 +52,41 @@ class LPAStar:
         self.count = 0
 
         self.fig = plt.figure()
+        
+        
+        self.expanded_nodes = 0   # counter for the total number of expanded nodes
+        self.searches = 0   # counter for the total number of searches
+        self.expanded_nodes_per_search = []   # list for tracking the number of expanded nodes per search
 
     def run(self):
+                
+        
+        global process, start_time, end_time
+        # measuring time at the start
+        start_time = time.time()
+        # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
+        m1 = process.memory_info().rss
+        
         self.Plot.plot_grid("Lifelong Planning A*")
-
         self.ComputeShortestPath()
         self.plot_path(self.extract_path())
-        self.fig.canvas.mpl_connect('button_press_event', self.on_press)
+        self.ComputeShortestPath()
+        self.plot_path(self.extract_path())
+       
+        m2 = process.memory_info().rss
 
+        
+        # End measuring time
+        end_time = time.time()
+        print("Total path cost:", self.get_total_path_cost())    # print the total path cost
+        print("Total number of expanded nodes:", self.expanded_nodes)   # print the total number of expanded nodes
+        print("Number of searches made to find a solution:", self.searches)   # print the number of searches
+        print("Number of expanded nodes per search:", self.expanded_nodes_per_search)   # print the number of expanded nodes per search
+        print(f"Total memory consumption {(m2 - m1)/1024/1024} MB")
+        print(f"Execution time: {end_time - start_time} seconds")
+        self.fig.canvas.mpl_connect('button_press_event', self.on_press)
         plt.show()
+        
 
     def on_press(self, event):
         x, y = event.xdata, event.ydata
@@ -79,8 +117,16 @@ class LPAStar:
             self.plot_visited(self.visited)
             self.plot_path(self.extract_path())
             self.fig.canvas.draw_idle()
-
+            # Print the information after the modification
+            print("Total path cost:", self.get_total_path_cost())    # print the total path cost
+            print("Total number of expanded nodes:", self.expanded_nodes)   # print the total number of expanded nodes
+            print("Number of searches made to find a solution:", self.searches)   # print the number of searches
+            print("Number of expanded nodes per search:", self.expanded_nodes_per_search)   # print the number of expanded nodes per search
+    
+    
     def ComputeShortestPath(self):
+        self.searches += 1
+        expanded_nodes_this_search = 0
         while True:
             s, v = self.TopKey()
 
@@ -90,6 +136,9 @@ class LPAStar:
 
             self.U.pop(s)
             self.visited.add(s)
+            self.expanded_nodes += 1
+            expanded_nodes_this_search += 1
+
 
             if self.g[s] > self.rhs[s]:
 
@@ -105,6 +154,11 @@ class LPAStar:
 
             for s_n in self.get_neighbor(s):
                 self.UpdateVertex(s_n)
+        
+        
+        self.expanded_nodes_per_search.append(expanded_nodes_this_search)
+        if self.g[self.s_goal] == float("inf"):
+            print("No path found to the goal.")
 
     def UpdateVertex(self, s):
         """
@@ -205,6 +259,7 @@ class LPAStar:
         return False
 
     def extract_path(self):
+
         """
         Extract the path based on the PARENT set.
         :return: The planning path
@@ -222,7 +277,7 @@ class LPAStar:
             path.append(s)
             if s == self.s_start:
                 break
-
+        
         return list(reversed(path))
 
     def plot_path(self, path):
@@ -243,14 +298,35 @@ class LPAStar:
         for x in visited:
             plt.plot(x[0], x[1], marker='s', color=color[self.count])
 
+    def get_total_path_cost(self):
+        path = self.extract_path()
+        total_cost = 0
+        for i in range(len(path) - 1):
+            total_cost += self.cost(path[i], path[i+1])
+        return total_cost
 
 def main():
-    x_start = (5, 5)
-    x_goal = (45, 25)
+    x_range = 51
+    y_range = 51
+    obs_density = 0.2  # 20% of the cells will have obstacles
 
-    lpastar = LPAStar(x_start, x_goal, "Euclidean")
+    random_env = RandomEnv(x_range, y_range, obs_density)
+    s_start = random_env.start
+    s_goal = random_env.goal
+
+    lpastar = LPAStar(s_start, s_goal, "Euclidean", random_env)
     lpastar.run()
 
+    
+
+# def main():
+#     x_start = (5, 5)
+#     x_goal = (45, 25)
+
+
+#     lpastar = LPAStar(x_start, x_goal, "Euclidean")
+#     lpastar.run()
+    
 
 if __name__ == '__main__':
     main()

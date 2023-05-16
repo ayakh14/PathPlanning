@@ -11,19 +11,18 @@ import heapq
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
-
 from Search_2D import plotting, env
-from random_env import RandomEnv, CustomEnv
+
 
 class AStar:
     """AStar set the cost + heuristics as the priority
     """
-    def __init__(self, s_start, s_goal, heuristic_type, environment):
+    def __init__(self, s_start, s_goal, heuristic_type):
         self.s_start = s_start
         self.s_goal = s_goal
         self.heuristic_type = heuristic_type
 
-        self.Env = environment  # class Env
+        self.Env = env.Env()  # class Env
 
         self.u_set = self.Env.motions  # feasible input set
         self.obs = self.Env.obs  # position of obstacles
@@ -209,15 +208,11 @@ class AStar:
 
 
 def main():
-    x_range = 51
-    y_range = 51
-    obs_density = 0.2  # 20% of the cells will have obstacles
+    s_start = (5, 5)
+    s_goal = (45, 25)
 
-    random_env = RandomEnv(x_range, y_range, obs_density)
-    s_start = random_env.start
-    s_goal = random_env.goal
-    astar = AStar(s_start, s_goal, "euclidean", random_env)
-    plot = plotting.Plotting(s_start, s_goal, random_env)
+    astar = AStar(s_start, s_goal, "euclidean")
+    plot = plotting.Plotting(s_start, s_goal)
 
     path, visited = astar.searching()
     plot.animation(path, visited, "A*")  # animation

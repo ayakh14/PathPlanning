@@ -7,20 +7,31 @@ import os
 import sys
 import math
 import matplotlib.pyplot as plt
+import time
+import psutil
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import plotting, env
-
+from random_env import RandomEnv
+# Starting measuring time
+start_time = None
+# End measuring time
+end_time = None
+process = psutil.Process()
 
 class DStar:
-    def __init__(self, s_start, s_goal, heuristic_type):
+    def __init__(self, s_start, s_goal, heuristic_type, env_instance=None):
         self.s_start, self.s_goal = s_start, s_goal
         self.heuristic_type = heuristic_type
 
-        self.Env = env.Env()  # class Env
-        self.Plot = plotting.Plotting(s_start, s_goal)
+        if env_instance is None:
+            self.Env = env.Env()
+        else:
+            self.Env = env_instance
+        
+        self.Plot = plotting.Plotting(s_start, s_goal, self.Env)
 
         self.u_set = self.Env.motions  # feasible input set
         self.obs = self.Env.obs  # position of obstacles
@@ -41,12 +52,33 @@ class DStar:
         self.count = 0
         self.fig = plt.figure()
 
+        self.total_path_cost = 0
+        self.total_expanded_nodes = 0
+        self.total_searches = 0
+
     def run(self):
+        global process, start_time, end_time
+        # measuring time at the start
+        start_time = time.time()
+        # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
+        m1 = process.memory_info().rss
+
         self.Plot.plot_grid("D* Lite")
         self.ComputePath()
         self.plot_path(self.extract_path())
+        m2 = process.memory_info().rss
+        # End measuring time
+        end_time = time.time()
+        self.total_path_cost = self.path_length(self.extract_path())
+        
+        print(f"1. Total path cost: {self.total_path_cost}")
+        print(f"2. Total number of expanded nodes: {self.total_expanded_nodes}")
+        print(f"3. Number of searches made to find a solution: {self.total_searches}")
+        print(f"Total memory consumption {(m2 - m1)/1024/1024} MB")
+        print(f"Execution time: {end_time - start_time} seconds")
         self.fig.canvas.mpl_connect('button_press_event', self.on_press)
         plt.show()
+        
 
     def on_press(self, event):
         x, y = event.xdata, event.ydata
@@ -94,8 +126,11 @@ class DStar:
             self.fig.canvas.draw_idle()
 
     def ComputePath(self):
+        self.total_searches += 1  # Increment the counter for total searches
         while True:
             s, v = self.TopKey()
+            self.total_expanded_nodes += 1  # Increment the counter for total expanded nodes
+           
             if v >= self.CalculateKey(self.s_start) and \
                     self.rhs[self.s_start] == self.g[self.s_start]:
                 break
@@ -226,13 +261,29 @@ class DStar:
         for x in visited:
             plt.plot(x[0], x[1], marker='s', color=color[self.count])
 
+    def path_length(self, path):
+        return sum(self.cost(path[i], path[i+1]) for i in range(len(path) - 1))
 
 def main():
-    s_start = (5, 5)
-    s_goal = (45, 25)
+    x_range = 51
+    y_range = 51
+    obs_density = 0.2  # 20% of the cells will have obstacles
 
-    dstar = DStar(s_start, s_goal, "euclidean")
+    random_env = RandomEnv(x_range, y_range, obs_density)
+    s_start = random_env.start
+    s_goal = random_env.goal
+    dstar = DStar(s_start, s_goal, "euclidean", random_env)
     dstar.run()
+    
+
+# def main():
+#     s_start = (5, 5)
+#     s_goal = (45, 25)
+
+#     dstar = DStar(s_start, s_goal, "euclidean")
+#     dstar.run()
+    
+
 
 
 if __name__ == '__main__':
