@@ -15,10 +15,15 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
 
 from Search_2D import plotting, env
 from random_env import RandomEnv
-# Starting measuring time
+from one_hundred_env_generator import load_environments
+import csv
+
+# Starting and End measuring time
 start_time = None
-# End measuring time
 end_time = None
+
+m1 = None
+m2 = None 
 process = psutil.Process()
 
 class DStar:
@@ -64,7 +69,7 @@ class DStar:
 
     def run(self, s_start, s_end):
 
-        global process, start_time, end_time
+        global process, start_time, end_time, m1, m2
         # measuring time at the start
         start_time = time.time()
         # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
@@ -87,15 +92,16 @@ class DStar:
         end_time = time.time()
 
         self.fig.canvas.mpl_connect('button_press_event', self.on_press)
-        plt.show()
+        # plt.show()
 
 
-        print(f"Total path cost: {self.total_path_cost}")
-        print(f"Total number of expanded nodes: {self.total_expanded_nodes}")
-        print(f"Number of searches made to find a solution: {self.total_searches}")
-        print(f"Number of expanded nodes per lookahead (iteration): {self.total_expanded_nodes / self.total_searches}")
-        print(f"Total memory consumption {(m2 - m1)/1024/1024} MB")
-        print(f"Execution time: {end_time - start_time} seconds")
+        print(f"1. Total path cost: {self.total_path_cost}")
+        print(f"2. Total number of expanded nodes: {self.total_expanded_nodes}")
+        print(f"3. Number of searches made to find a solution: {self.total_searches}")
+        print(f"4. Number of expanded nodes per lookahead (iteration): {self.total_expanded_nodes / self.total_searches}")
+        print(f"5. Total memory consumption {(m2 - m1)/1024/1024} MB")
+        print(f"6. Execution time: {end_time - start_time} seconds")
+    
     def on_press(self, event):
         x, y = event.xdata, event.ydata
         if x < 0 or x > self.x - 1 or y < 0 or y > self.y - 1:
@@ -336,24 +342,69 @@ class DStar:
             plt.plot(x[0], x[1], marker='s', color=color[self.count])
 
 
+
 def main():
-    x_range = 51
-    y_range = 51
-    obs_density = 0.2  # 20% of the cells will have obstacles
+    # Create the directory if it doesn't exist
+    directory = "one_hundred_random_grids/results"
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
-    random_env = RandomEnv(x_range, y_range, obs_density)
-    s_start = random_env.start
-    s_goal = random_env.goal
+    # Load environments
+    envs = load_environments()
+    with open('one_hundred_random_grids/results/D_star_results.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        # Write the header of the CSV file
+        writer.writerow(["Experiment", "Grid", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory consumption (MB)", "Execution time (s)"])
+        for i, env in enumerate(envs):
+                
+                print(f"Running algorithm on grid {i+1} with start state {env.start} and goal state {env.goal}")
 
-    dstar = DStar(s_start, s_goal, random_env)
-    dstar.run(s_start, s_goal)
+                s_start = env.start
+                s_goal = env.goal
+
+                dstar = DStar(s_start, s_goal, env)
+                dstar.run(s_start, s_goal)
+                # get results from the Dstar instance
+                path_cost = dstar.total_path_cost
+                num_expanded_nodes = dstar.total_expanded_nodes
+                num_searches = dstar.total_searches
+                memory_consumption = (m2 - m1)/1024/1024
+                execution_time = end_time - start_time
+                writer.writerow([1, i+1, "-", path_cost, num_expanded_nodes, num_searches, memory_consumption, execution_time])
+    print("All environments have been processed.")
+
+if __name__ == '__main__':
+    main()
+
+######################################################
+######################################################
+##################randm env#####################
+######################################################
+######################################################
+######################################################
+
+# def main():
+#     x_range = 51
+#     y_range = 51
+#     obs_density = 0.2  # 20% of the cells will have obstacles
+
+#     random_env = RandomEnv(x_range, y_range, obs_density)
+#     s_start = random_env.start
+#     s_goal = random_env.goal
+
+#     dstar = DStar(s_start, s_goal, random_env)
+#     dstar.run(s_start, s_goal)
+
+# if __name__ == '__main__':
+#     main()
+
 
 # def main():
 #     s_start = (5, 5)
 #     s_goal = (45, 25)
 #     dstar = DStar(s_start, s_goal)
 #     dstar.run(s_start, s_goal)
+# if __name__ == '__main__':
+#     main()
 
 
-if __name__ == '__main__':
-    main()

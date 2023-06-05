@@ -15,10 +15,16 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
 
 from Search_2D import plotting, env
 from random_env import RandomEnv
-# Starting measuring time
+from one_hundred_env_generator import load_environments
+import csv
+
+
+# Starting and End measuring time
 start_time = None
-# End measuring time
 end_time = None
+
+m1 = None
+m2 = None 
 process = psutil.Process()
 
 class DStar:
@@ -57,7 +63,7 @@ class DStar:
         self.total_searches = 0
 
     def run(self):
-        global process, start_time, end_time
+        global process, start_time, end_time, m1, m2 
         # measuring time at the start
         start_time = time.time()
         # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
@@ -77,7 +83,7 @@ class DStar:
         print(f"Total memory consumption {(m2 - m1)/1024/1024} MB")
         print(f"Execution time: {end_time - start_time} seconds")
         self.fig.canvas.mpl_connect('button_press_event', self.on_press)
-        plt.show()
+        # plt.show()
         
 
     def on_press(self, event):
@@ -196,22 +202,33 @@ class DStar:
 
         return math.hypot(s_goal[0] - s_start[0], s_goal[1] - s_start[1])
 
+    # def is_collision(self, s_start, s_end):
+    #     if s_start in self.obs or s_end in self.obs:
+    #         return True
+
+    #     if s_start[0] != s_end[0] and s_start[1] != s_end[1]:
+    #         if s_end[0] - s_start[0] == s_start[1] - s_end[1]:
+    #             s1 = (min(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
+    #             s2 = (max(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
+    #         else:
+    #             s1 = (min(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
+    #             s2 = (max(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
+
+    #         if s1 in self.obs or s2 in self.obs:
+    #             return True
+
+    #     return False
+
     def is_collision(self, s_start, s_end):
-        if s_start in self.obs or s_end in self.obs:
-            return True
-
-        if s_start[0] != s_end[0] and s_start[1] != s_end[1]:
-            if s_end[0] - s_start[0] == s_start[1] - s_end[1]:
-                s1 = (min(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
-                s2 = (max(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
-            else:
-                s1 = (min(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
-                s2 = (max(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
-
-            if s1 in self.obs or s2 in self.obs:
+        points_on_path = bresenham_line(s_start, s_end)
+        for point in points_on_path:
+            if point in self.obs:
                 return True
-
         return False
+
+    
+
+
 
     def get_neighbor(self, s):
         nei_list = set()
@@ -264,17 +281,116 @@ class DStar:
     def path_length(self, path):
         return sum(self.cost(path[i], path[i+1]) for i in range(len(path) - 1))
 
-def main():
-    x_range = 51
-    y_range = 51
-    obs_density = 0.2  # 20% of the cells will have obstacles
+def bresenham_line(s_start, s_end):
+    """Bresenham's Line Algorithm
+    Produces a list of tuples from start and end
 
-    random_env = RandomEnv(x_range, y_range, obs_density)
-    s_start = random_env.start
-    s_goal = random_env.goal
-    dstar = DStar(s_start, s_goal, "euclidean", random_env)
-    dstar.run()
-    
+    :param s_start: start coordinate
+    :param s_end: end coordinate
+    :returns: list of points in the path
+    """
+    # Setup initial conditions
+    x1, y1 = s_start
+    x2, y2 = s_end
+    dx = x2 - x1
+    dy = y2 - y1
+
+    # Determine how steep the line is
+    is_steep = abs(dy) > abs(dx)
+
+    # Rotate line
+    if is_steep:
+        x1, y1 = y1, x1
+        x2, y2 = y2, x2
+
+    # Swap start and end points if necessary and store swap state
+    swapped = False
+    if x1 > x2:
+        x1, x2 = x2, x1
+        y1, y2 = y2, y1
+        swapped = True
+
+    # Recalculate differentials
+    dx = x2 - x1
+    dy = y2 - y1
+
+    # Calculate error
+    error = int(dx / 2.0)
+    ystep = 1 if y1 < y2 else -1
+
+    # Iterate over bounding box generating points between start and end
+    y = y1
+    points = []
+    for x in range(x1, x2 + 1):
+        coord = (y, x) if is_steep else (x, y)
+        points.append(coord)
+        error -= abs(dy)
+        if error < 0:
+            y += ystep
+            error += dx
+
+    # Reverse the list if the coordinates were swapped
+    if swapped:
+        points.reverse()
+    return points
+
+
+def main():
+    # Create the directory if it doesn't exist
+    directory = "one_hundred_random_grids/results"
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    # Load environments
+    envs = load_environments()
+    with open('one_hundred_random_grids/results/D_star_Lite_results.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        # Write the header of the CSV file
+        writer.writerow(["Experiment", "Grid", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory consumption (MB)", "Execution time (s)"])
+        for i, env in enumerate(envs):
+                
+                print(f"Running algorithm on grid {i+1} with start state {env.start} and goal state {env.goal}")
+
+                s_start = env.start
+                s_goal = env.goal
+
+                dstar = DStar(s_start, s_goal, "euclidean", env)
+                dstar.run()
+                # get results from the Dstar instance
+                path_cost = dstar.total_path_cost
+                num_expanded_nodes = dstar.total_expanded_nodes
+                num_searches = dstar.total_searches
+                # expanded_nodes_per_lookahead =
+                memory_consumption = (m2 - m1)/1024/1024
+                execution_time = end_time - start_time
+                writer.writerow([1, i+1, "-", path_cost, num_expanded_nodes, num_searches, memory_consumption, execution_time])
+    print("All environments have been processed.")
+
+
+if __name__ == '__main__':
+    main()  
+
+
+
+
+######################################################
+######################################################
+##################randm env#####################
+######################################################
+######################################################
+######################################################
+# def main():
+#     x_range = 51
+#     y_range = 51
+#     obs_density = 0.2  # 20% of the cells will have obstacles
+
+#     random_env = RandomEnv(x_range, y_range, obs_density)
+#     s_start = random_env.start
+#     s_goal = random_env.goal
+#     dstar = DStar(s_start, s_goal, "euclidean", random_env)
+#     dstar.run()
+# if __name__ == '__main__':
+#     main()   
 
 # def main():
 #     s_start = (5, 5)
@@ -282,9 +398,9 @@ def main():
 
 #     dstar = DStar(s_start, s_goal, "euclidean")
 #     dstar.run()
-    
+# if __name__ == '__main__':
+#     main()
+   
 
 
 
-if __name__ == '__main__':
-    main()

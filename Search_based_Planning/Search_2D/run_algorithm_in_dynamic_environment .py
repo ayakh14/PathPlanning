@@ -1,3 +1,10 @@
+"""
+to run algorithms in random environment
+
+"""
+
+
+
 import sys
 import plotting
 from random_env import RandomEnv

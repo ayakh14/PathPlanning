@@ -7,13 +7,18 @@ import os
 import sys
 import math
 import heapq
-
+import time
+import psutil
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
-
 from Search_2D import plotting, env
-from random_env import RandomEnv, CustomEnv
+from random_env import RandomEnv
+from one_hundred_env_generator import load_environments
+import csv
+
+
+
 
 class AStar:
     """AStar set the cost + heuristics as the priority
@@ -33,11 +38,31 @@ class AStar:
         self.PARENT = dict()  # recorded parent
         self.g = dict()  # cost to come
 
+        # Starting measuring time
+        self.start_time = None
+        # End measuring time
+        self.end_time = None
+        self.process = psutil.Process()
+        self.memory_usage_before = None
+        self.memory_usage_after = None
+
+
+        self.total_path_cost = 0
+        self.total_expanded_nodes = 0
+        self.total_searches = 0
+        self.expanded_nodes_per_lookahead = []
+
+
     def searching(self):
         """
         A_star Searching.
         :return: path, visited order
         """
+        # start measuring time and memory usage at the start of the search
+        self.start_time = time.time()
+        self.memory_usage_before = self.process.memory_info().rss
+        
+        self.total_searches += 1   # Increment total searches here
 
         self.PARENT[self.s_start] = self.s_start
         self.g[self.s_start] = 0
@@ -62,7 +87,13 @@ class AStar:
                     self.g[s_n] = new_cost
                     self.PARENT[s_n] = s
                     heapq.heappush(self.OPEN, (self.f_value(s_n), s_n))
-
+        
+        if self.CLOSED[-1] != self.s_goal:
+            print("No solution was found.")
+            return None, self.CLOSED
+        # Measuring memory usage and time at the end of the search
+        self.memory_usage_after = self.process.memory_info().rss
+        self.end_time = time.time()
         return self.extract_path(self.PARENT), self.CLOSED
 
     def searching_repeated_astar(self, e):
@@ -208,23 +239,108 @@ class AStar:
             return math.hypot(goal[0] - s[0], goal[1] - s[1])
 
 
+
+# main for random env
+
 def main():
-    x_range = 51
-    y_range = 51
-    obs_density = 0.2  # 20% of the cells will have obstacles
+    # Load environments
+    envs = load_environments()
+    # os.makedirs('results', exist_ok=True)
+    with open('one_hundred_random_grids/results/A_star_results.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        # Write the header of the CSV file
+        writer.writerow(["Experiment", "Grid", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory consumption (MB)", "Execution time (s)"])
+        for i, env in enumerate(envs):
+                        
+            print(f"Running algorithm on grid {i+1} with start state {env.start} and goal state {env.goal}")
 
-    random_env = RandomEnv(x_range, y_range, obs_density)
-    s_start = random_env.start
-    s_goal = random_env.goal
-    astar = AStar(s_start, s_goal, "euclidean", random_env)
-    plot = plotting.Plotting(s_start, s_goal, random_env)
+            s_start = env.start
+            s_goal = env.goal        
 
-    path, visited = astar.searching()
-    plot.animation(path, visited, "A*")  # animation
+            astar = AStar(s_start, s_goal, "euclidean", env)
+            plot = plotting.Plotting(s_start, s_goal, env)
 
-    # path, visited = astar.searching_repeated_astar(2.5)               # initial weight e = 2.5
-    # plot.animation_ara_star(path, visited, "Repeated A*")
+            path, visited = astar.searching()
+
+            total_expanded_nodes = sum(len(nodes) for nodes in visited)
+            nodes_per_search = [len(nodes) for nodes in visited]
+            total_path_cost = sum(astar.cost(path[i], path[i-1]) for i in range(1, len(path))) # Calculate total path cost
+            execution_time = astar.end_time - astar.start_time
+            memory_consumption = (astar.memory_usage_after - astar.memory_usage_before)/1024/1024
+            
+            # Added lines - Print the gathered information
+            print(f"Total path cost: {total_path_cost}")
+            print(f"Total number of expanded nodes: {total_expanded_nodes}")
+            print(f"Number of searches made to find a solution: {astar.total_searches}")
+            # print(f"Number of expanded nodes per lookahead (iteration): {nodes_per_search}")
+            print(f"Total memory consumption {memory_consumption} MB")
+            print(f"Execution time: {execution_time} seconds")
+            writer.writerow([1, i+1, "-", total_path_cost, total_expanded_nodes, astar.total_searches, memory_consumption, execution_time])
+
+            # plot.animation(path, visited, "A*")  # animation
+
+            # path, visited = astar.searching_repeated_astar(2.5)               # initial weight e = 2.5
+            # plot.animation_ara_star(path, visited, "Repeated A*")
+   
+    print("All environments have been processed.")
 
 
 if __name__ == '__main__':
     main()
+
+
+# # main for random env
+
+# def main():
+#     x_range = 51
+#     y_range = 51
+#     obs_density = 0.2  # 20% of the cells will have obstacles
+
+#     random_env = RandomEnv(x_range, y_range, obs_density)
+#     s_start = random_env.start
+#     s_goal = random_env.goal
+#     astar = AStar(s_start, s_goal, "euclidean", random_env)
+#     plot = plotting.Plotting(s_start, s_goal, random_env)
+
+#     path, visited = astar.searching()
+
+#     total_expanded_nodes = sum(len(nodes) for nodes in visited)
+#     nodes_per_search = [len(nodes) for nodes in visited]
+#     total_path_cost = sum(astar.cost(path[i], path[i-1]) for i in range(1, len(path))) # Calculate total path cost
+#     # Added lines - Print the gathered information
+#     print(f"Total path cost: {total_path_cost}")
+#     print(f"Total number of expanded nodes: {total_expanded_nodes}")
+#     print(f"Number of searches made to find a solution: {astar.total_searches}")
+#     # print(f"Number of expanded nodes per lookahead (iteration): {nodes_per_search}")
+#     print(f"Total memory consumption {(astar.memory_usage_after - astar.memory_usage_before)/1024/1024} MB")
+#     print(f"Execution time: {astar.end_time - astar.start_time} seconds")
+
+#     plot.animation(path, visited, "A*")  # animation
+
+#     # path, visited = astar.searching_repeated_astar(2.5)               # initial weight e = 2.5
+#     # plot.animation_ara_star(path, visited, "Repeated A*")
+
+
+
+# if __name__ == '__main__':
+#     main()
+
+
+
+######################### main for static environment 
+# def main():
+#     s_start = (5, 5)
+#     s_goal = (45, 25)
+
+#     astar = AStar(s_start, s_goal, "euclidean")
+#     plot = plotting.Plotting(s_start, s_goal)
+
+#     path, visited = astar.searching()
+#     plot.animation(path, visited, "A*")  # animation
+
+#     # path, visited = astar.searching_repeated_astar(2.5)               # initial weight e = 2.5
+#     # plot.animation_ara_star(path, visited, "Repeated A*")
+
+
+# if __name__ == '__main__':
+#     main()
