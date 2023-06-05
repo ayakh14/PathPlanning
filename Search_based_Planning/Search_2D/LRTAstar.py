@@ -15,8 +15,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
 
 from Search_2D import queue, plotting, env
 from random_env import RandomEnv
-from one_hundred_env_generator import load_environments
+# from one_hundred_env_generator import load_environments
 import csv
+from changing_obstacle_density import obstacle_density_load_environments
+from changing_start_goal_distance import start_goal_distance_load_environments
+from changing_grid_size import grid_size_env_load_environments
 
 # Starting measuring time
 start_time = None
@@ -320,36 +323,35 @@ def bresenham_line(s_start, s_end):
 
 
 
-def main():
+# Function to process a specific environment
+def process_env(env_loader, directory, result_file):
     # Create the directory if it doesn't exist
-    directory = "one_hundred_random_grids/results"
     if not os.path.exists(directory):
         os.makedirs(directory)
-
+    # Print the directory being processed
+    print(f"\n Processing environment: {directory}")
     # Load environments
-    envs = load_environments()
-    with open('one_hundred_random_grids/results/LRTA_star_results.csv', 'w', newline='') as file:
-        writer = csv.writer(file)
-        # Write the header of the CSV file
-        writer.writerow(["Experiment", "Grid", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory consumption (MB)", "Execution time (s)"])
-        
-        N = 10
-        for exp in range(1, 21):  # loop for 20 experiments
-            for i, env in enumerate(envs):
-                
-                print(f"Running algorithm on grid {i+1} with start state {env.start} and goal state {env.goal}")
+    envs = env_loader()
 
+    with open(result_file, 'w', newline='') as file:
+        writer = csv.writer(file)
+        
+        # Write the header of the CSV file
+        writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory consumption (MB)", "Execution time (s)"])
+        for i, env in enumerate(envs):          
+            print(f"Running algorithm on grid {i+1}, s_state {env.start}, g_state {env.goal}, env_size {env.x_range}, obs_dancity {env.obs_density:.2f}, s/g distance {env.manhattan_distance} ")
+            for exp in range(10):
                 s_start = env.start
                 s_goal = env.goal
-    
 
-                lrta = LrtAStarN(s_start, s_goal, N, "euclidean", env)
+
+                lrta = LrtAStarN(s_start, s_goal, 250, "euclidean", env)
                 plot = plotting.Plotting(s_start, s_goal, env)
 
                 lrta.searching()
                 lrta.calculate_total_path_cost()
                 
-                print(f"\nGrid {i+1} with N = {N}:")
+                # print(f"\nGrid {i+1} with N = {N}:")
 
                 path_cost = lrta.total_path_cost
                 num_expanded_nodes = lrta.total_expanded_nodes
@@ -370,80 +372,24 @@ def main():
                 # plot.animation_lrta(lrta.path, lrta.visited,"Learning Real-time A* (LRTA*)")
                 
                 # Write the results into the CSV file
-                writer.writerow([exp, i+1, N, path_cost, num_expanded_nodes, num_searches, memory_consumption, execution_time])
+                writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, 250, path_cost, num_expanded_nodes, num_searches, memory_consumption, execution_time])
                 
-            N += 10  # increase N for the next grid
+           
 
     print("All environments have been processed.")
     
+def main():
+    # Define environment loaders, directories and result files
+    env_loaders = [grid_size_env_load_environments, start_goal_distance_load_environments, obstacle_density_load_environments]
+    directories = ["grid_size_env/results", "start_goal_distance_env/results", "obstacle_density_env/results"]
+    result_files = ['grid_size_env/results/LRTA_star_results.csv', 'start_goal_distance_env/results/LRTA_star_results.csv', 'obstacle_density_env/results/LRTA_star_results.csv']
+    
+    # Process each environment
+    for env_loader, directory, result_file in zip(env_loaders, directories, result_files):
+        process_env(env_loader, directory, result_file)
+
+    print("All environments have been processed.")
+
+
 if __name__ == '__main__':
     main()
-
-
-######################################################
-######################################################
-##################randm env#####################
-######################################################
-######################################################
-######################################################
-
-# def main():
-#     x_range = 50
-#     y_range = 50
-#     obs_density = 0.25  # 20% of the cells will have obstacles
-
-#     random_env = RandomEnv(x_range, y_range, obs_density)
-#     s_start = random_env.start
-#     s_goal = random_env.goal
-
-#     lrta = LrtAStarN(s_start, s_goal, 30, "euclidean", random_env)
-#     plot = plotting.Plotting(s_start, s_goal, random_env)
-
-#     lrta.searching()
-#     lrta.calculate_total_path_cost()
-
-
-#     # Print the requested information
-
-#     print(f"1. Total path cost: {lrta.total_path_cost}")
-#     print(f"2. Total number of expanded nodes: {lrta.total_expanded_nodes}")
-#     print(f"3. Number of searches made to find a solution: {lrta.total_searches}")
-#     print(f"4. Number of expanded nodes per lookahead (iteration): {lrta.expanded_nodes_per_lookahead}")
-#     print(f"5. Total memory consumption {(m2 - m1)/1024/1024} MB")
-#     print(f"6. Execution time: {end_time - start_time} seconds") 
-#     plot.animation_lrta(lrta.path, lrta.visited,
-#                         "Learning Real-time A* (LRTA*)")
-        
-# if __name__ == '__main__':
-#     main()
-
-
-######################################################
-######################################################
-######################################################
-######################################################
-######################################################
-######################################################
-
-    # def main():
-    # s_start = (10, 5)
-    # s_goal = (45, 25)
-
-    # lrta = LrtAStarN(s_start, s_goal, 400, "euclidean")
-    # plot = plotting.Plotting(s_start, s_goal)
-
-    # lrta.searching()
-    # lrta.calculate_total_path_cost()
-
-
-    # # Print the requested information
-
-
-    # print(f"1. Total path cost: {lrta.total_path_cost}")
-    # print(f"2. Total number of expanded nodes: {lrta.total_expanded_nodes}")
-    # print(f"3. Number of searches made to find a solution: {lrta.total_searches}")
-    # print(f"4. Number of expanded nodes per lookahead (iteration): {lrta.expanded_nodes_per_lookahead}")
-    # print(f"5. Total memory consumption {(m2 - m1)/1024/1024} MB")
-    # print(f"6. Execution time: {end_time - start_time} seconds") 
-    # plot.animation_lrta(lrta.path, lrta.visited,
-    #                     "Learning Real-time A* (LRTA*)")
