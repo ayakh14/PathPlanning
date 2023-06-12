@@ -1,4 +1,3 @@
-
 """
 LPA_star 2D
 @author: huiming zhou
@@ -10,19 +9,23 @@ import math
 import matplotlib.pyplot as plt
 import time
 import psutil
+import gc
+import linecache
+import tracemalloc
+import csv
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import plotting, env
 from random_env import RandomEnv
-# from one_hundred_env_generator import load_environments
-import csv
+
 from changing_obstacle_density import obstacle_density_load_environments
 from changing_start_goal_distance import start_goal_distance_load_environments
 from changing_grid_size import grid_size_env_load_environments
+# from one_hundred_env_generator import load_environments
 
-process = psutil.Process()
+
 class LPAStar:
 
     def __init__(self, s_start, s_goal, heuristic_type, env_instance=None):
@@ -63,6 +66,11 @@ class LPAStar:
         self.m2 = 0
         self.start_time = 0
         self.end_time = 0
+        
+        self.process = psutil.Process()
+        self.memory_usage_before = None
+        self.memory_usage_after = None
+        
     # def run(self):
                 
         
@@ -93,29 +101,21 @@ class LPAStar:
     #     plt.show()
     def run(self):
 
-        self.start_time = time.time()
-        self.m1 = process.memory_info().rss  # start memory tracking
-
         self.Plot.plot_grid("Lifelong Planning A*")
         self.ComputeShortestPath()
         self.plot_path(self.extract_path())
 
-        self.m2 = process.memory_info().rss  # measure memory after first search and path extraction
-
         self.ComputeShortestPath()
         self.plot_path(self.extract_path())
 
-        self.m2 = process.memory_info().rss  # update memory tracking after second search and path extraction
-
         total_path_cost = self.get_total_path_cost()
         # End measuring time
-        self.end_time = time.time()
-        print("Total path cost:", total_path_cost)    # print the total path cost
-        print("Total number of expanded nodes:", self.expanded_nodes)   # print the total number of expanded nodes
-        print("Number of searches made to find a solution:", self.searches)   # print the number of searches
-        print("Number of expanded nodes per search:", self.expanded_nodes_per_search)   # print the number of expanded nodes per search
-        print(f"Total memory consumption {(self.m2 - self.m1)/1024/1024} MB")
-        print(f"Execution time: {self.end_time - self.start_time} seconds")
+        # print("Total path cost:", total_path_cost)    # print the total path cost
+        # print("Total number of expanded nodes:", self.expanded_nodes)   # print the total number of expanded nodes
+        # print("Number of searches made to find a solution:", self.searches)   # print the number of searches
+        # print("Number of expanded nodes per search:", self.expanded_nodes_per_search)   # print the number of expanded nodes per search
+        # print(f"Total memory consumption {(self.m2 - self.m1)/1024/1024} MB")
+        # print(f"Execution time: {self.end_time - self.start_time} seconds")
         self.fig.canvas.mpl_connect('button_press_event', self.on_press)
         # plt.show()
 
@@ -337,7 +337,31 @@ class LPAStar:
             total_cost += self.cost(path[i], path[i+1])
         return total_cost
 
+def display_top(snapshot, key_type='lineno', limit=20):
+    print(tracemalloc.__file__)
+    snapshot = snapshot.filter_traces((
+        #tracemalloc.Filter(False, tracemalloc.__file__),
+        #tracemalloc.Filter(False, linecache.__file__),
+        tracemalloc.Filter(True, __file__),
+    ))
+    top_stats = snapshot.statistics(key_type)
 
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        print("#%s: %s:%s: %.1f KiB"
+              % (index, frame.filename, frame.lineno, stat.size / 1024))
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print('    %s' % line)
+
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
+    return total
 
 
 def process_env(env_loader, directory, result_file):
@@ -353,24 +377,40 @@ def process_env(env_loader, directory, result_file):
         writer = csv.writer(file)
         
         # Write the header of the CSV file
-        writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory consumption (MB)", "Execution time (s)"])
+        writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory Allocation (KB)", "RSS (KB)", "VMS (KB)", "Execution time (ms)"])
         for i, env in enumerate(envs):          
             print(f"Running algorithm on grid {i+1}, s_state {env.start}, g_state {env.goal}, env_size {env.x_range}, obs_dancity {env.obs_density:.2f}, s/g distance {env.manhattan_distance} ")
-            for exp in range(10):
+            for exp in range(1, 11):
                 s_start = env.start
                 s_goal = env.goal
 
                 lpastar = LPAStar(s_start, s_goal, "Euclidean", env)
+                tracemalloc.start()
+                # start measuring time and memory usage at the start of the search
+                start_time = time.perf_counter_ns()
+                lpastar.memory_usage_before = lpastar.process.memory_info()
                 lpastar.run()
+                lpastar.memory_usage_after = lpastar.process.memory_info()
+                end_time = time.perf_counter_ns()
+                snapshot = tracemalloc.take_snapshot()
+                tracemalloc.stop()
+                memo_rss = (lpastar.memory_usage_after.rss - lpastar.memory_usage_before.rss)/ 1024
+                memo_vms = (lpastar.memory_usage_after.vms - lpastar.memory_usage_before.vms)/ 1024
+                total = display_top(snapshot, limit=0) / 1024
+
                 # get results from the Dstar instance
                 path_cost = lpastar.get_total_path_cost()
                 num_expanded_nodes = lpastar.expanded_nodes
                 num_searches = lpastar.searches
                 # expanded_nodes_per_lookahead = LPAStar.expanded_nodes_per_search
-                memory_consumption = (lpastar.m2 - lpastar.m1)/1024/1024
-                execution_time = lpastar.end_time - lpastar.start_time
-                writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, "-", path_cost, num_expanded_nodes, num_searches, memory_consumption, execution_time])
-    print("All environments have been processed.")
+                # memory_consumption = (lpastar.m2 - lpastar.m1)/1024/1024
+                execution_time = (end_time - start_time) / 1e6 
+                writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, "-", path_cost, num_expanded_nodes, num_searches, total, memo_rss, memo_vms,execution_time])
+                plt.close(lpastar.fig)
+                # Call garbage collector to free up memory
+                gc.collect()
+    
+    print("the environment has been processed.")
 
 def main():
     # Define environment loaders, directories and result files
@@ -386,38 +426,3 @@ def main():
 
 if __name__ == '__main__':
     main()  
-    
-    
-
-######################################################
-######################################################
-##################randm env#####################
-######################################################
-######################################################
-######################################################   
-# def main():
-#     x_range = 51
-#     y_range = 51
-#     obs_density = 0.2  # 20% of the cells will have obstacles
-
-#     random_env = RandomEnv(x_range, y_range, obs_density)
-#     s_start = random_env.start
-#     s_goal = random_env.goal
-
-#     lpastar = LPAStar(s_start, s_goal, "Euclidean", random_env)
-#     lpastar.run()
-# if __name__ == '__main__':
-#     main()
-    
-
-# def main():
-#     x_start = (5, 5)
-#     x_goal = (45, 25)
-
-
-#     lpastar = LPAStar(x_start, x_goal, "Euclidean")
-#     lpastar.run()
-# if __name__ == '__main__':
-#     main()   
-
-

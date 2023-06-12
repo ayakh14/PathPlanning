@@ -9,26 +9,20 @@ import math
 import matplotlib.pyplot as plt
 import time
 import psutil
-
+import gc
+import linecache
+import tracemalloc
+import csv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import plotting, env
 from random_env import RandomEnv
-# from one_hundred_env_generator import load_environments
-import csv
 from changing_obstacle_density import obstacle_density_load_environments
 from changing_start_goal_distance import start_goal_distance_load_environments
 from changing_grid_size import grid_size_env_load_environments
+# from one_hundred_env_generator import load_environments
 
-
-# Starting and End measuring time
-start_time = None
-end_time = None
-
-m1 = None
-m2 = None 
-process = psutil.Process()
 
 class DStar:
     def __init__(self, s_start, s_goal, heuristic_type, env_instance=None):
@@ -65,13 +59,12 @@ class DStar:
         self.total_expanded_nodes = 0
         self.total_searches = 0
 
+        self.process = psutil.Process()
+        self.memory_usage_before = None
+        self.memory_usage_after = None
+    
     def run(self):
-        global process, start_time, end_time, m1, m2 
-        # measuring time at the start
-        start_time = time.time()
-        # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
-        m1 = process.memory_info().rss
-
+        
         self.Plot.plot_grid("D* Lite")
         self.ComputePath()
 
@@ -80,16 +73,13 @@ class DStar:
         # self.on_press( obj )
 
         self.plot_path(self.extract_path())
-        m2 = process.memory_info().rss
-        # End measuring time
-        end_time = time.time()
         self.total_path_cost = self.path_length(self.extract_path())
         
         print(f"1. Total path cost: {self.total_path_cost}")
         print(f"2. Total number of expanded nodes: {self.total_expanded_nodes}")
         print(f"3. Number of searches made to find a solution: {self.total_searches}")
-        print(f"Total memory consumption {(m2 - m1)/1024/1024} MB")
-        print(f"Execution time: {end_time - start_time} seconds")
+        # print(f"Total memory consumption {(m2 - m1)/1024/1024} MB")
+        # print(f"Execution time: {end_time - start_time} seconds")
         self.fig.canvas.mpl_connect('button_press_event', self.on_press)
         # plt.show()
         
@@ -234,10 +224,6 @@ class DStar:
                 return True
         return False
 
-    
-
-
-
     def get_neighbor(self, s):
         nei_list = set()
         for u in self.u_set:
@@ -342,6 +328,31 @@ def bresenham_line(s_start, s_end):
         points.reverse()
     return points
 
+def display_top(snapshot, key_type='lineno', limit=20):
+    print(tracemalloc.__file__)
+    snapshot = snapshot.filter_traces((
+        #tracemalloc.Filter(False, tracemalloc.__file__),
+        #tracemalloc.Filter(False, linecache.__file__),
+        tracemalloc.Filter(True, __file__),
+    ))
+    top_stats = snapshot.statistics(key_type)
+
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        print("#%s: %s:%s: %.1f KiB"
+              % (index, frame.filename, frame.lineno, stat.size / 1024))
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print('    %s' % line)
+
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
+    return total
 
 def process_env(env_loader, directory, result_file):
     # Create the directory if it doesn't exist
@@ -356,24 +367,41 @@ def process_env(env_loader, directory, result_file):
         writer = csv.writer(file)
         
         # Write the header of the CSV file
-        writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory consumption (MB)", "Execution time (s)"])
+        writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory Allocation (KB)", "RSS (KB)", "VMS (KB)", "Execution time (ms)"])
         for i, env in enumerate(envs):          
             print(f"Running algorithm on grid {i+1}, s_state {env.start}, g_state {env.goal}, env_size {env.x_range}, obs_dancity {env.obs_density:.2f}, s/g distance {env.manhattan_distance} ")
-            for exp in range(10):
+            
+            for exp in range(1, 11):
                 s_start = env.start
                 s_goal = env.goal
 
                 dstar = DStar(s_start, s_goal, "euclidean", env)
+                tracemalloc.start()
+                # start measuring time and memory usage at the start of the search
+                start_time = time.perf_counter_ns()
+                dstar.memory_usage_before = dstar.process.memory_info()
                 dstar.run()
+                dstar.memory_usage_after = dstar.process.memory_info()
+                end_time = time.perf_counter_ns()
+                snapshot = tracemalloc.take_snapshot()
+                tracemalloc.stop()
+                memo_rss = (dstar.memory_usage_after.rss - dstar.memory_usage_before.rss)/ 1024
+                memo_vms = (dstar.memory_usage_after.vms - dstar.memory_usage_before.vms)/ 1024
+                total = display_top(snapshot, limit=0) / 1024
+
                 # get results from the Dstar instance
                 path_cost = dstar.total_path_cost
                 num_expanded_nodes = dstar.total_expanded_nodes
                 num_searches = dstar.total_searches
                 # expanded_nodes_per_lookahead =
-                memory_consumption = (m2 - m1)/1024/1024
-                execution_time = end_time - start_time
-                writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, "-", path_cost, num_expanded_nodes, num_searches, memory_consumption, execution_time])
-    print("All environments have been processed.")
+                # memory_consumption = (m2 - m1)/1024/1024
+                execution_time = (end_time - start_time) / 1e6 
+                writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, "-", path_cost, num_expanded_nodes, num_searches, total, memo_rss, memo_vms,execution_time])
+                plt.close(dstar.fig)
+                # Call garbage collector to free up memory
+                gc.collect()
+    print("the environment has been processed.")
+
 
 def main():
     # Define environment loaders, directories and result files
@@ -388,4 +416,4 @@ def main():
     print("All environments have been processed.")
 
 if __name__ == '__main__':
-    main()  
+    main() 

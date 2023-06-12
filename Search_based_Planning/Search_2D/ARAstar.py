@@ -12,26 +12,22 @@ import sys
 import math
 import time
 import psutil
-
+import gc
+import linecache
+import tracemalloc
+import csv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import plotting, env
 from random_env import RandomEnv
-# from one_hundred_env_generator import load_environments
-import csv
 from changing_obstacle_density import obstacle_density_load_environments
 from changing_start_goal_distance import start_goal_distance_load_environments
 from changing_grid_size import grid_size_env_load_environments
+# from one_hundred_env_generator import load_environments
 
 
-# Starting measuring time
-start_time = None
-# End measuring time
-end_time = None
-process = psutil.Process()
-m2 = None
-m1 = None
+
 
 class AraStar:
     def __init__(self, s_start, s_goal, e, heuristic_type, environment):
@@ -53,7 +49,9 @@ class AraStar:
         self.visited = [] 
         
         self.searches = 0   #added
-                                                          # order of visited nodes
+        self.process = psutil.Process()
+        self.memory_usage_before = None
+        self.memory_usage_after = None                                                  # order of visited nodes
 
     def init(self):
         """
@@ -66,13 +64,6 @@ class AraStar:
         self.PARENT[self.s_start] = self.s_start
 
     def searching(self):
-
-        global process, start_time, end_time, m1, m2
-        # measuring time at the start
-        start_time = time.time()
-        # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
-        m1 = process.memory_info().rss
-
 
         self.init()
         self.ImprovePath()
@@ -90,10 +81,6 @@ class AraStar:
             self.path.append(self.extract_path())
 
             self.searches += 1    # Added line - Increment the counter after each ImprovePath call
-
-        m2 = process.memory_info().rss
-        # End measuring time
-        end_time = time.time()
         return self.path, self.visited
 
     def ImprovePath(self):
@@ -241,6 +228,7 @@ class AraStar:
         return False
 
     def calculate_path_cost(self):
+            
             """
             Calculating the total cost of the final path.
             :return: Total path cost
@@ -256,8 +244,77 @@ class AraStar:
 
 
             return total_cost
+    
+def display_top(snapshot, key_type='lineno', limit=20):
+
+    print(tracemalloc.__file__)
+    snapshot = snapshot.filter_traces((
+        #tracemalloc.Filter(False, tracemalloc.__file__),
+        #tracemalloc.Filter(False, linecache.__file__),
+        tracemalloc.Filter(True, __file__),
+    ))
+    top_stats = snapshot.statistics(key_type)
+
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        print("#%s: %s:%s: %.1f KiB"
+              % (index, frame.filename, frame.lineno, stat.size / 1024))
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print('    %s' % line)
+
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
+    return total
+
+def ara_star (env, writer,exp, i):
+    s_start = env.start
+    s_goal = env.goal
+
+    arastar = AraStar(s_start, s_goal, 2.5, "euclidean", env)
+    plot = plotting.Plotting(s_start, s_goal, env)
+    tracemalloc.start()
+ # start measuring time and memory usage at the start of the search
+    start_time = time.perf_counter_ns()
+    arastar.memory_usage_before = arastar.process.memory_info()
+    path, visited = arastar.searching()
+    arastar.memory_usage_after = arastar.process.memory_info()
+    end_time = time.perf_counter_ns()
+    snapshot = tracemalloc.take_snapshot()
+    tracemalloc.stop()
+    memo_rss = (arastar.memory_usage_after.rss - arastar.memory_usage_before.rss)/ 1024
+    memo_vms = (arastar.memory_usage_after.vms - arastar.memory_usage_before.vms)/ 1024
+    total = display_top(snapshot, limit=0) / 1024
+
+    print(f"\nGrid {i+1} with N =:")
+
+    path_cost = arastar.calculate_path_cost()
+    num_expanded_nodes = sum(len(nodes) for nodes in visited)
+    num_searches = arastar.searches
+    expanded_nodes_per_lookahead = [len(nodes) for nodes in visited]
+    execution_time = (end_time - start_time) / 1e6 
 
 
+    # Added lines - Print the gathered information
+    print(f"Total path cost: {path_cost}")
+    print(f"Total number of expanded nodes: {num_expanded_nodes}")
+    print(f"Number of searches made to find a solution: {num_searches}")
+    print(f"Number of expanded nodes per lookahead (iteration): {expanded_nodes_per_lookahead}")
+    print(f"Total allocated memory: {total} KB")
+    print(f"Memory consumption RSS: {memo_rss} KB")
+    print(f"Memory consumption VMS: {memo_vms} KB")
+    print(f"Execution time: {execution_time} ms")
+
+    # plot.animation_ara_star(path, visited, "Anytime Repairing A* (ARA*)")
+    
+    # Write the results into the CSV file
+    writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, "-", path_cost, num_expanded_nodes, num_searches, total, memo_rss, memo_vms,execution_time])
+            
 
 
 def process_env(env_loader, directory, result_file):
@@ -273,43 +330,15 @@ def process_env(env_loader, directory, result_file):
         writer = csv.writer(file)
         
         # Write the header of the CSV file
-        writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory consumption (MB)", "Execution time (s)"])
+        writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory Allocation (KB)", "RSS (KB)", "VMS (KB)", "Execution time (ms)"])
         for i, env in enumerate(envs):          
             print(f"Running algorithm on grid {i+1}, s_state {env.start}, g_state {env.goal}, env_size {env.x_range}, obs_dancity {env.obs_density:.2f}, s/g distance {env.manhattan_distance} ")
-            for exp in range(10):
-                s_start = env.start
-                s_goal = env.goal
+            for exp in range(1, 11):
+                ara_star(env, writer, exp, i)
+                # Call garbage collector to free up memory
+                gc.collect()
 
-                arastar = AraStar(s_start, s_goal, 2.5, "euclidean", env)
-                plot = plotting.Plotting(s_start, s_goal, env)
-
-                path, visited = arastar.searching()
-                
-                print(f"\nGrid {i+1} with N =:")
-
-                path_cost = arastar.calculate_path_cost()
-                num_expanded_nodes = sum(len(nodes) for nodes in visited)
-                num_searches = arastar.searches
-                expanded_nodes_per_lookahead = [len(nodes) for nodes in visited]
-                memory_consumption = (m2 - m1)/1024/1024
-                execution_time = end_time - start_time
-                
-
-                # Added lines - Print the gathered information
-                print(f"1.Total path cost: {path_cost}")
-                print(f"2.Total number of expanded nodes: {num_expanded_nodes}")
-                print(f"3.Number of searches made to find a solution: {num_searches}")
-                print(f"4.Number of expanded nodes per lookahead (iteration): {expanded_nodes_per_lookahead}")
-                print(f"5.Total memory consumption {memory_consumption} MBi")
-                print(f"6.Execution time: {execution_time} seconds")
-
-                # plot.animation_ara_star(path, visited, "Anytime Repairing A* (ARA*)")
-                # Write the results into the CSV file
-                writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, "-", path_cost, num_expanded_nodes, num_searches, memory_consumption, execution_time])
-            
-
-
-    print("All environments have been processed.")
+    print("the environment has been processed.")
                 
 def main():
     # Define environment loaders, directories and result files

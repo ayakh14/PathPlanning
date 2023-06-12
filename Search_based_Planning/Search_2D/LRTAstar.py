@@ -9,49 +9,43 @@ import copy
 import math
 import time
 import psutil
-
+import gc
+import linecache
+import tracemalloc
+import csv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
 from Search_2D import queue, plotting, env
 from random_env import RandomEnv
-# from one_hundred_env_generator import load_environments
-import csv
+
 from changing_obstacle_density import obstacle_density_load_environments
 from changing_start_goal_distance import start_goal_distance_load_environments
 from changing_grid_size import grid_size_env_load_environments
+# from one_hundred_env_generator import load_environments
 
-# Starting measuring time
-start_time = None
-# End measuring time
-end_time = None
-process = psutil.Process()
-m2 = None
-m1 = None
 
 class LrtAStarN:
     def __init__(self, s_start, s_goal, N, heuristic_type, environment):
         self.s_start, self.s_goal = s_start, s_goal
         self.heuristic_type = heuristic_type
-
         self.Env = environment
-
         self.u_set = self.Env.motions  # feasible input set
         self.obs = self.Env.obs  # position of obstacles
-
         self.N = N  # number of expand nodes each iteration
         self.visited = []  # order of visited nodes in planning
         self.path = []  # path of each iteration
         self.h_table = {}  # h_value table
-
-
-
+       
         self.total_path_cost = 0
         self.total_expanded_nodes = 0
         self.total_searches = 0
         self.expanded_nodes_per_lookahead = []
-        
-
+       
+        self.process = psutil.Process()
+        self.memory_usage_before = None
+        self.memory_usage_after = None  
+    
     def init(self):
         """
         initialize the h_value of all nodes in the environment.
@@ -64,12 +58,7 @@ class LrtAStarN:
 
     def searching(self):
 
-        global process, start_time, end_time, m1, m2
-        # measuring time at the start
-        start_time = time.time()
-        # print(f"mempry with pustil 1 {process.memory_info().rss} --> MB {process.memory_info().rss/1024/1024}")  # in bytes 
-        m1 = process.memory_info().rss
-
+ 
         self.init()
         s_start = self.s_start  # initialize start node
 
@@ -92,9 +81,6 @@ class LrtAStarN:
             self.path.append(path_k)
             self.total_searches += 1
 
-        m2 = process.memory_info().rss
-        # End measuring time
-        end_time = time.time()
     def extract_path_in_CLOSE(self, s_start, h_value):
         path = [s_start]
         s = s_start
@@ -320,8 +306,81 @@ def bresenham_line(s_start, s_end):
         points.reverse()
     return points
 
+def display_top(snapshot, key_type='lineno', limit=20):
+    print(tracemalloc.__file__)
+    snapshot = snapshot.filter_traces((
+        #tracemalloc.Filter(False, tracemalloc.__file__),
+        #tracemalloc.Filter(False, linecache.__file__),
+        tracemalloc.Filter(True, __file__),
+    ))
+    top_stats = snapshot.statistics(key_type)
 
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        print("#%s: %s:%s: %.1f KiB"
+              % (index, frame.filename, frame.lineno, stat.size / 1024))
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print('    %s' % line)
 
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
+    return total
+
+def lrta_star_alg (env, writer,exp, i):
+    s_start = env.start
+    s_goal = env.goal
+
+    lrta = LrtAStarN(s_start, s_goal, 250, "euclidean", env)
+    plot = plotting.Plotting(s_start, s_goal, env)
+    
+    tracemalloc.start()
+    
+    # start measuring time and memory usage at the start of the search
+    start_time = time.perf_counter_ns()
+    lrta.memory_usage_before = lrta.process.memory_info()
+    lrta.searching()
+    lrta.memory_usage_after = lrta.process.memory_info()
+    end_time = time.perf_counter_ns()
+    snapshot = tracemalloc.take_snapshot()
+    tracemalloc.stop()
+    memo_rss = (lrta.memory_usage_after.rss - lrta.memory_usage_before.rss)/ 1024
+    memo_vms = (lrta.memory_usage_after.vms - lrta.memory_usage_before.vms)/ 1024
+    total = display_top(snapshot, limit=0) / 1024
+    lrta.calculate_total_path_cost()
+    
+    # print(f"\nGrid {i+1} with N = {N}:")
+
+    path_cost = lrta.total_path_cost
+    num_expanded_nodes = lrta.total_expanded_nodes
+    num_searches = lrta.total_searches
+    expanded_nodes_per_lookahead = lrta.expanded_nodes_per_lookahead
+    execution_time = (end_time - start_time) / 1e6 
+    
+    # Print the requested information
+
+    print(f"Total path cost: {path_cost}")
+    print(f"Total number of expanded nodes: {num_expanded_nodes}")
+    print(f"Number of searches made to find a solution: {num_searches}")
+    # print(f"4. Number of expanded nodes per lookahead (iteration): {expanded_nodes_per_lookahead}")
+    print(f"Total allocated memory: {total} KB")
+    print(f"Memory consumption RSS: {memo_rss} KB")
+    print(f"Memory consumption VMS: {memo_vms} KB")
+    print(f"Execution time: {execution_time} ms")
+    # I commentes this line to avoid the animation of the algorithm
+    # plot.animation_lrta(lrta.path, lrta.visited,"Learning Real-time A* (LRTA*)")
+    
+    # Write the results into the CSV file
+    writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, 250, path_cost, num_expanded_nodes, num_searches, total, memo_rss, memo_vms, execution_time])
+    print("the environment has been processed.")         
+           
+
+    
 
 # Function to process a specific environment
 def process_env(env_loader, directory, result_file):
@@ -337,47 +396,13 @@ def process_env(env_loader, directory, result_file):
         writer = csv.writer(file)
         
         # Write the header of the CSV file
-        writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory consumption (MB)", "Execution time (s)"])
+        writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory Allocation (KB)", "RSS (KB)", "VMS (KB)", "Execution time (ms)"])
         for i, env in enumerate(envs):          
             print(f"Running algorithm on grid {i+1}, s_state {env.start}, g_state {env.goal}, env_size {env.x_range}, obs_dancity {env.obs_density:.2f}, s/g distance {env.manhattan_distance} ")
-            for exp in range(10):
-                s_start = env.start
-                s_goal = env.goal
-
-
-                lrta = LrtAStarN(s_start, s_goal, 250, "euclidean", env)
-                plot = plotting.Plotting(s_start, s_goal, env)
-
-                lrta.searching()
-                lrta.calculate_total_path_cost()
-                
-                # print(f"\nGrid {i+1} with N = {N}:")
-
-                path_cost = lrta.total_path_cost
-                num_expanded_nodes = lrta.total_expanded_nodes
-                num_searches = lrta.total_searches
-                expanded_nodes_per_lookahead = lrta.expanded_nodes_per_lookahead
-                memory_consumption = (m2 - m1)/1024/1024
-                execution_time = end_time - start_time
-                
-                # Print the requested information
-
-                print(f"1. Total path cost: {path_cost}")
-                print(f"2. Total number of expanded nodes: {num_expanded_nodes}")
-                print(f"3. Number of searches made to find a solution: {num_searches}")
-                # print(f"4. Number of expanded nodes per lookahead (iteration): {expanded_nodes_per_lookahead}")
-                print(f"5. Total memory consumption {memory_consumption} MBi")
-                print(f"6. Execution time: {execution_time} seconds") 
-                # I commentes this line to avoid the animation of the algorithm
-                # plot.animation_lrta(lrta.path, lrta.visited,"Learning Real-time A* (LRTA*)")
-                
-                # Write the results into the CSV file
-                writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, 250, path_cost, num_expanded_nodes, num_searches, memory_consumption, execution_time])
-                
-           
-
-    print("All environments have been processed.")
-    
+            for exp in range(1, 11):
+                lrta_star_alg (env, writer,exp, i)
+                # Call garbage collector to free up memory
+                gc.collect()
 def main():
     # Define environment loaders, directories and result files
     env_loaders = [grid_size_env_load_environments, start_goal_distance_load_environments, obstacle_density_load_environments]
