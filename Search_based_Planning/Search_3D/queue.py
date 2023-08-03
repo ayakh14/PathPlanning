@@ -15,10 +15,10 @@ class QueueFIFO:
         return len(self.queue) == 0
 
     def put(self, node):
-        self.queue.append(node)  # enter from back
+        self.queue_.append(node)  # enter from back
 
     def get(self):
-        return self.queue.popleft()  # leave from front
+        return self.queue_.popleft()  # leave from front
 
 
 class QueueLIFO:
@@ -34,10 +34,10 @@ class QueueLIFO:
         return len(self.queue) == 0
 
     def put(self, node):
-        self.queue.append(node)  # enter from back
+        self.queue_.append(node)  # enter from back
 
     def get(self):
-        return self.queue.pop()  # leave from back
+        return self.queue_.pop()  # leave from back
 
 
 class QueuePrior:
@@ -64,7 +64,7 @@ class QueuePrior:
     def check_remove(self, item):
         for (p, x) in self.queue:
             if item == x:
-                self.queue.remove((p, x))
+                self.queue_.remove((p, x))
 
     def top_key(self):
         return self.queue[0][0]
@@ -148,7 +148,7 @@ class MinheapPQ:
 #     def check_remove(self, item):
 #         for (p, s) in self.queue:
 #             if item == s:
-#                 self.queue.remove((p, s))
+#                 self.queue_.remove((p, s))
 
 #     def top_key(self):
 #         return self.queue[0][0]

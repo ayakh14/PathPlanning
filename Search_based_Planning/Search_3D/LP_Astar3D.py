@@ -34,7 +34,7 @@ class Lifelong_Astar(object):
         self.rhs[self.start] = 0 # rhs(x0) = 0
         self.h = Heuristic(self.g, self.goal)
         
-        self.OPEN = queue.MinheapPQ()  # store [point,priority]
+        self.OPEN = queue_.MinheapPQ()  # store [point,priority]
         self.OPEN.put(self.x0, [self.h[self.x0],0])
         self.CLOSED = set()
 

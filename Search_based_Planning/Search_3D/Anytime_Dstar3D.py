@@ -31,7 +31,7 @@ class Anytime_Dstar(object):
         self.env = env(resolution=resolution)
         self.settings = 'CollisionChecking'  # for collision checking
         self.x0, self.xt = tuple(self.env.start), tuple(self.env.goal)
-        self.OPEN = queue.MinheapPQ()
+        self.OPEN = queue_.MinheapPQ()
         self.g = {}  # all g initialized at inf
         self.h = {}
         self.rhs = {self.xt: 0}  # rhs(x0) = 0

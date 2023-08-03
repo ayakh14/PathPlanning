@@ -1,0 +1,2 @@
+Experiment,Grid number,Obstacle density,Grid size,s/g distance,lookahead,Path cost,Number of expanded nodes,Number of searches,Memory Allocation (KB),RSS (KB),VMS (KB),Execution time (ms)
+RTAA*,2,0,31,73.53910524340094,250,124.81118318204301,2194,9,313.57421875,-1136.0,-1204.0,94.1344

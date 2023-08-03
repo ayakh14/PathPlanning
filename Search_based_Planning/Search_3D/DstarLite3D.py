@@ -30,8 +30,8 @@ class D_star_Lite(object):
         #self.x0, self.xt = getNearest(self.X, self.env.start), getNearest(self.X, self.env.goal)
         self.settings = 'CollisionChecking' # for collision checking
         self.x0, self.xt = tuple(self.env.start), tuple(self.env.goal)
-        # self.OPEN = queue.QueuePrior()
-        self.OPEN = queue.MinheapPQ()
+        # self.OPEN = queue_.QueuePrior()
+        self.OPEN = queue_.MinheapPQ()
         self.km = 0
         self.g = {} # all g initialized at inf
         self.rhs = {self.xt:0} # rhs(x0) = 0

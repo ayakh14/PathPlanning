@@ -1,6 +1,6 @@
 import random
 from env import Env
-
+import math
 
 class GridEnv(Env):
     def __init__(self, x_range, y_range, obs_density, start_state, goal_state):
@@ -11,7 +11,7 @@ class GridEnv(Env):
         self.goal = goal_state
         self.obs_density = obs_density
         self.obs = self.random_obs()
-        self.manhattan_distance = abs(start_state[0]-goal_state[0]) + abs(start_state[1]-goal_state[1])
+        self.euclidean_distance = math.sqrt((start_state[0] - goal_state[0])**2 + (start_state[1] - goal_state[1])**2)
 
     def random_obs(self):
         obs = set()
@@ -24,20 +24,21 @@ class GridEnv(Env):
             else:
                 obs.add((x, y))
 
-        # Add border obstacles, but make sure it does not overlap with the start and goal states
+        # Add border obstacles
         for i in range(self.x_range):
-            if (i, 0) != self.start and (i, 0) != self.goal:
-                obs.add((i, 0))
-            if (i, self.y_range - 1) != self.start and (i, self.y_range - 1) != self.goal:
-                obs.add((i, self.y_range - 1))
+            obs.add((i, 0))
+            obs.add((i, self.y_range - 1))
 
         for i in range(self.y_range):
-            if (0, i) != self.start and (0, i) != self.goal:
-                obs.add((0, i))
-            if (self.x_range - 1, i) != self.start and (self.x_range - 1, i) != self.goal:
-                obs.add((self.x_range - 1, i))
+            obs.add((0, i))
+            obs.add((self.x_range - 1, i))
+
+        # Make sure the start and goal states are not obstacles
+        obs.discard(self.start)
+        obs.discard(self.goal)
 
         return obs
+
 
     def random_state(self):
         x = random.randint(1, self.x_range - 2)

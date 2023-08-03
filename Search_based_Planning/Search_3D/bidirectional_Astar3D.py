@@ -33,8 +33,8 @@ class Weighted_A_star(object):
         self.settings = 'NonCollisionChecking'
         self.start, self.goal = tuple(self.env.start), tuple(self.env.goal)
         self.g = {self.start:0,self.goal:0}
-        self.OPEN1 = queue.MinheapPQ() # store [point,priority]
-        self.OPEN2 = queue.MinheapPQ()
+        self.OPEN1 = queue_.MinheapPQ() # store [point,priority]
+        self.OPEN2 = queue_.MinheapPQ()
         self.Parent1, self.Parent2 = {}, {}
         self.CLOSED1, self.CLOSED2 = set(), set()
         self.V = []

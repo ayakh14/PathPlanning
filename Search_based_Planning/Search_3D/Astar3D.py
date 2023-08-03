@@ -40,7 +40,7 @@ class Weighted_A_star(object):
         self.Path = []
         self.ind = 0
         self.x0, self.xt = self.start, self.goal
-        self.OPEN = queue.MinheapPQ()  # store [point,priority]
+        self.OPEN = queue_.MinheapPQ()  # store [point,priority]
         self.OPEN.put(self.x0, self.g[self.x0] + heuristic_fun(self,self.x0))  # item, priority = g + h
         self.lastpoint = self.x0
 

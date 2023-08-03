@@ -141,7 +141,7 @@ class RrtStar:
         return cost
 
     def update_cost(self, parent_node):
-        OPEN = queue.QueueFIFO()
+        OPEN = queue_.QueueFIFO()
         OPEN.put(parent_node)
 
         while not OPEN.empty():

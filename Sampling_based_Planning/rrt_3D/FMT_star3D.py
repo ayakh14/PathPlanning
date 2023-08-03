@@ -62,7 +62,7 @@ class FMT_star:
         c[self.xinit] = 0
         # use a min heap to speed up
         Vopen_queue = MinheapPQ()
-        Vopen_queue.put(self.xinit, c[self.xinit]) # priority organized as the cost to come
+        Vopen_queue_.put(self.xinit, c[self.xinit]) # priority organized as the cost to come
         return Vopen, Vopen_queue, closed, V, Vunvisited, c
 
     def Near(self, nodeset, node, rn):

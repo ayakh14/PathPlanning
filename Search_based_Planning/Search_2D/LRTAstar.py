@@ -16,14 +16,17 @@ import csv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")
 
-from Search_2D import queue, plotting, env
-from random_env import RandomEnv
+from Search_2D import queue_, plotting, env
+# from random_env import RandomEnv
+# from changing_distance_position_of_s_g import start_goal_distance_load_environments_second
+# from one_hundred_env_generator import load_environments
 
 from changing_obstacle_density import obstacle_density_load_environments
 from changing_start_goal_distance import start_goal_distance_load_environments
 from changing_grid_size import grid_size_env_load_environments
-# from one_hundred_env_generator import load_environments
-
+from vertical_walls_env import load_vertical_walls_environments 
+from change_wall_size import load_vertical_wall_size_environments
+# from 
 
 class LrtAStarN:
     def __init__(self, s_start, s_goal, N, heuristic_type, environment):
@@ -124,7 +127,7 @@ class LrtAStarN:
     def AStar(self, x_start, N):
         # Add the following lines at the beginning of the AStar method in the LrtAStarN class
         expanded_nodes_count = 0
-        OPEN = queue.QueuePrior()  # OPEN set
+        OPEN = queue_.QueuePrior()  # OPEN set
         OPEN.put(x_start, self.h(x_start))
         CLOSED = []  # CLOSED set
         g_table = {x_start: 0, self.s_goal: float("inf")}  # Cost to come
@@ -376,7 +379,7 @@ def lrta_star_alg (env, writer,exp, i):
     # plot.animation_lrta(lrta.path, lrta.visited,"Learning Real-time A* (LRTA*)")
     
     # Write the results into the CSV file
-    writer.writerow([exp, i+1, env.obs_density, env.x_range , env.manhattan_distance, 250, path_cost, num_expanded_nodes, num_searches, total, memo_rss, memo_vms, execution_time])
+    writer.writerow([exp, i+1, env.obs_density, env.x_range , env.euclidean_distance, 250, path_cost, num_expanded_nodes, num_searches, total, memo_rss, memo_vms, execution_time])
     print("the environment has been processed.")         
            
 
@@ -398,17 +401,17 @@ def process_env(env_loader, directory, result_file):
         # Write the header of the CSV file
         writer.writerow(["Experiment", "Grid number", "Obstacle density", "Grid size", "s/g distance", "lookahead" , "Path cost", "Number of expanded nodes", "Number of searches", "Memory Allocation (KB)", "RSS (KB)", "VMS (KB)", "Execution time (ms)"])
         for i, env in enumerate(envs):          
-            print(f"Running algorithm on grid {i+1}, s_state {env.start}, g_state {env.goal}, env_size {env.x_range}, obs_dancity {env.obs_density:.2f}, s/g distance {env.manhattan_distance} ")
-            for exp in range(1, 11):
+            print(f"Running algorithm on grid {i+1}, s_state {env.start}, g_state {env.goal}, env_size {env.x_range}, obs_dancity {env.obs_density:.2f}, s/g distance {env.euclidean_distance} ")
+            for exp in range(1, 101):
                 lrta_star_alg (env, writer,exp, i)
                 # Call garbage collector to free up memory
                 gc.collect()
 def main():
     # Define environment loaders, directories and result files
-    env_loaders = [grid_size_env_load_environments, start_goal_distance_load_environments, obstacle_density_load_environments]
-    directories = ["grid_size_env/results", "start_goal_distance_env/results", "obstacle_density_env/results"]
-    result_files = ['grid_size_env/results/LRTA_star_results.csv', 'start_goal_distance_env/results/LRTA_star_results.csv', 'obstacle_density_env/results/LRTA_star_results.csv']
-    
+    env_loaders = [grid_size_env_load_environments, start_goal_distance_load_environments, load_vertical_walls_environments, load_vertical_wall_size_environments, obstacle_density_load_environments]
+    directories = ["grid_size_env/results", "start_goal_distance_env/results", "vertical_wall_env/results", "vertical_wall_size_env/results", "obstacle_density_env/results"]
+    result_files = ['grid_size_env/results/LRTA_star_100_run_results.csv', 'start_goal_distance_env/results/LRTA_star_100_run_results.csv', 'vertical_wall_env/results/LRTA_star_100_run_results.csv', 'vertical_wall_size_env/results/LRTA_star_100_run_results.csv', 'obstacle_density_env/results/LRTA_star_100_run_results.csv']
+
     # Process each environment
     for env_loader, directory, result_file in zip(env_loaders, directories, result_files):
         process_env(env_loader, directory, result_file)
